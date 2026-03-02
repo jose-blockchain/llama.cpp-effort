@@ -1322,6 +1322,10 @@ struct llama_model_params common_model_params_to_llama(common_params & params) {
     mparams.tensor_split    = params.tensor_split;
     mparams.use_mmap        = params.use_mmap;
     mparams.use_direct_io   = params.use_direct_io;
+    mparams.use_bucket_mul  = params.use_bucket_mul;
+    mparams.bucket_mul_effort      = params.bucket_mul_effort;
+    mparams.bucket_mul_effort_min  = params.bucket_mul_effort_min;
+    mparams.bucket_mul_cpu_threshold    = params.bucket_mul_cpu_threshold;
     mparams.use_mlock       = params.use_mlock;
     mparams.check_tensors   = params.check_tensors;
     mparams.use_extra_bufts = !params.no_extra_bufts;

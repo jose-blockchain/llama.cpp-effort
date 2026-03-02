@@ -528,6 +528,7 @@ llama_model_loader::llama_model_loader(
         /*.ctx      = */ &ctx,
     };
 
+    path_model = fname;
     meta.reset(gguf_init_from_file(fname.c_str(), params));
     if (!meta) {
         throw std::runtime_error(format("%s: failed to load model from %s", __func__, fname.c_str()));

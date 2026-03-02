@@ -238,15 +238,12 @@ int main(int argc, char ** argv) {
     SetConsoleCtrlHandler(reinterpret_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
 #endif
 
-    console::log("\nLoading model... "); // followed by loading animation
-    console::spinner::start();
+    console::log("\n"); // progress "Loading model... XX%%" from default callback
     if (!ctx_cli.ctx_server.load_model(params)) {
-        console::spinner::stop();
-        console::error("\nFailed to load the model\n");
+        console::error("Failed to load the model\n");
         return 1;
     }
 
-    console::spinner::stop();
     console::log("\n");
 
     std::thread inference_thread([&ctx_cli]() {

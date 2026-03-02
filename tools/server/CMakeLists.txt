@@ -11,6 +11,8 @@ add_library(${TARGET} STATIC
     server-queue.h
     server-common.cpp
     server-common.h
+    server-cpu-usage.cpp
+    server-cpu-usage.h
     server-context.cpp
     server-context.h
 )

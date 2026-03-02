@@ -2214,6 +2214,35 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_DIO"));
     add_opt(common_arg(
+        {"--bucket-mul"},
+        {"--no-bucket-mul"},
+        "CPU: build bucket views when loading model and use effort-based matmul (for speed comparison with baseline)",
+        [](common_params & params, bool value) {
+            params.use_bucket_mul = value;
+        }
+    ).set_env("LLAMA_ARG_BUCKET_MUL"));
+    add_opt(common_arg(
+        {"--bucket-mul-effort"}, "FLOAT",
+        "bucket-mul nominal effort 0.0-1.0 (default: 0.5)",
+        [](common_params & params, const std::string & value) {
+            params.bucket_mul_effort = std::stof(value);
+        }
+    ));
+    add_opt(common_arg(
+        {"--bucket-mul-effort-min"}, "FLOAT",
+        "bucket-mul minimum effort when CPU usage is high (default: 0.25)",
+        [](common_params & params, const std::string & value) {
+            params.bucket_mul_effort_min = std::stof(value);
+        }
+    ));
+    add_opt(common_arg(
+        {"--bucket-mul-cpu-threshold"}, "PCT",
+        "average CPU usage %% (0-100) above which reduce effort (default: 999 = disabled)",
+        [](common_params & params, const std::string & value) {
+            params.bucket_mul_cpu_threshold = std::stof(value);
+        }
+    ));
+    add_opt(common_arg(
         {"--numa"}, "TYPE",
         "attempt optimizations that help on some NUMA systems\n"
         "- distribute: spread execution evenly over all nodes\n"

@@ -898,10 +898,11 @@ static struct llama_model * llama_model_load_from_file_impl(
             unsigned percentage = (unsigned) (100 * progress);
             while (percentage > *cur_percentage_p) {
                 *cur_percentage_p = percentage;
-                LLAMA_LOG_CONT(".");
+                fprintf(stderr, "\rLoading model... %3u%%", percentage);
                 if (percentage >= 100) {
-                    LLAMA_LOG_CONT("\n");
+                    fprintf(stderr, "\n");
                 }
+                fflush(stderr);
             }
             return true;
         };

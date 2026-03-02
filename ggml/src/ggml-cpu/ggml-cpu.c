@@ -13,6 +13,7 @@
 #include "vec.h"
 #include "ops.h"
 #include "ggml.h"
+#include "ggml-bucket-mul.h"
 #include "common.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
@@ -1237,6 +1238,25 @@ void ggml_compute_forward_mul_mat(
 
     const int ith = params->ith;
     const int nth = params->nth;
+
+    /* BucketMul path: effort < 1.0, single batch, weight has bucket data, large enough to benefit */
+    if (ith == 0 && ggml_bucket_mul_get_effort() < 1.0f) {
+        struct ggml_bucket_weights *bw = ggml_bucket_mul_get_const(src1);
+        if (bw && ne01 == 1 && ne11 == 1 && ne12 == 1 && ne13 == 1 &&
+            ggml_is_contiguous(src0) && ggml_is_contiguous(dst) &&
+            (int64_t)bw->in_size * bw->out_size >= 512 * 512) {
+            const float *v = (const float *)src0->data;
+            float *out = (float *)dst->data;
+            ggml_bucket_mul_mul_vec(bw, v, out, 0, ggml_bucket_mul_get_effort());
+            return;
+        }
+    }
+    if (ggml_bucket_mul_get_effort() < 1.0f) {
+        struct ggml_bucket_weights *bw = ggml_bucket_mul_get_const(src1);
+        if (bw && ne01 == 1 && ne11 == 1 && ne12 == 1 && ne13 == 1 &&
+            (int64_t)bw->in_size * bw->out_size >= 512 * 512)
+            return;
+    }
 
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;

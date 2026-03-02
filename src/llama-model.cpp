@@ -12,6 +12,7 @@
 #include "llama-memory-recurrent.h"
 
 #include "ggml-cpp.h"
+#include "ggml-bucket-mul.h"
 
 #include "models/models.h"
 
@@ -467,6 +468,8 @@ struct llama_model::impl {
     std::vector<layer_dev> dev_layer;
 
     bool has_tensor_overrides;
+
+    std::vector<ggml_tensor *> bucket_mul_registered;
 };
 
 llama_model::llama_model(const llama_model_params & params) : params(params), pimpl(std::make_unique<impl>()) {
@@ -474,6 +477,9 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
 }
 
 llama_model::~llama_model() {
+    for (auto * t : pimpl->bucket_mul_registered) {
+        ggml_bucket_mul_unregister(t);
+    }
     for (auto * lora : loras) {
         delete lora;
     }
@@ -7812,6 +7818,63 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         }
     }
 
+    if (params.use_bucket_mul) {
+        ggml_bucket_mul_set_effort(params.bucket_mul_effort);
+        const int64_t bucket_size = GGML_BUCKET_MUL_BUCKET_SIZE;
+        std::string cache_path = ml.get_path() + ".bucket_mul";
+        struct ggml_bucket_mul_cache *cache = ggml_bucket_mul_load(cache_path.c_str());
+        bool built_any = false;
+        for (const auto & [name, t] : tensors_by_name) {
+            if (t->ne[2] != 1 || t->ne[3] != 1 || !t->data) continue;
+            const int64_t ne0 = t->ne[0], ne1 = t->ne[1];
+            if (ne1 % bucket_size != 0) continue;
+            struct ggml_bucket_weights *bw = cache ? ggml_bucket_mul_cache_get(cache, name.c_str()) : nullptr;
+            if (bw) {
+                ggml_bucket_mul_register(t, bw);
+                pimpl->bucket_mul_registered.push_back(t);
+                continue;
+            }
+            built_any = true;
+            bw = (struct ggml_bucket_weights *)malloc(sizeof(struct ggml_bucket_weights));
+            if (!bw) continue;
+            memset(bw, 0, sizeof(*bw));
+            bool ok = false;
+            if (t->type == GGML_TYPE_F16) {
+                ok = ggml_bucket_mul_build_from_f16(bw, t->data, ne1, ne0, t->nb[1], t->nb[0]);
+            } else if (t->type == GGML_TYPE_F32) {
+                ok = ggml_bucket_mul_build_from_f32(bw, (const float *)t->data, ne1, ne0, t->nb[1], t->nb[0]);
+            }
+            if (ok) {
+                ggml_bucket_mul_register(t, bw);
+                pimpl->bucket_mul_registered.push_back(t);
+            } else {
+                ggml_bucket_mul_free_bucket_weights(bw);
+                free(bw);
+            }
+        }
+        if (cache) {
+            ggml_bucket_mul_cache_free(cache);
+            LLAMA_LOG_INFO("%s: bucket_mul loaded from cache '%s', %zu tensors\n",
+                __func__, cache_path.c_str(), pimpl->bucket_mul_registered.size());
+        } else {
+            LLAMA_LOG_INFO("%s: bucket_mul enabled (nominal %.0f%% effort), %zu weight tensors registered\n",
+                __func__, 100.0 * params.bucket_mul_effort, pimpl->bucket_mul_registered.size());
+        }
+        if (built_any && !pimpl->bucket_mul_registered.empty()) {
+            std::vector<const char *> names;
+            std::vector<struct ggml_bucket_weights *> bws;
+            names.reserve(pimpl->bucket_mul_registered.size());
+            bws.reserve(pimpl->bucket_mul_registered.size());
+            for (ggml_tensor * t : pimpl->bucket_mul_registered) {
+                names.push_back(ggml_get_name(t));
+                bws.push_back(ggml_bucket_mul_get_const(t));
+            }
+            if (ggml_bucket_mul_save(cache_path.c_str(), names.data(), bws.data(), (int)bws.size())) {
+                LLAMA_LOG_INFO("%s: bucket_mul cache saved to '%s'\n", __func__, cache_path.c_str());
+            }
+        }
+    }
+
     return true;
 }
 
@@ -8848,6 +8911,10 @@ llama_model_params llama_model_default_params() {
         /*.use_extra_bufts             =*/ true,
         /*.no_host                     =*/ false,
         /*.no_alloc                    =*/ false,
+        /*.use_bucket_mul              =*/ false,
+        /*.bucket_mul_effort           =*/ 0.5f,
+        /*.bucket_mul_effort_min        =*/ 0.25f,
+        /*.bucket_mul_cpu_threshold          =*/ 999.0f,
     };
 
     return result;

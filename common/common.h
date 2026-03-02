@@ -477,6 +477,10 @@ struct common_params {
     bool input_prefix_bos  = false; // prefix BOS to user inputs, preceding input_prefix
     bool use_mmap          = true;  // enable mmap to use filesystem cache
     bool use_direct_io     = false; // read from disk without buffering
+    bool use_bucket_mul    = false; // CPU: build bucket views when loading model, dynamic effort matmul
+    float bucket_mul_effort      = 0.5f;  // nominal effort (default 50%%)
+    float bucket_mul_effort_min  = 0.25f; // min effort when CPU usage high (25%%)
+    float bucket_mul_cpu_threshold   = 999.0f; // average CPU usage %% (0-100) above which reduce effort (999 = off)
     bool use_mlock         = false; // use mlock to keep model in memory
     bool verbose_prompt    = false; // print prompt tokens before generation
     bool display_prompt    = true;  // print prompt before generation

@@ -11,8 +11,11 @@
 #include "speculative.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
+#include "ggml-bucket-mul.h"
+#include "server-cpu-usage.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <cinttypes>
 #include <memory>
 #include <filesystem>
@@ -551,6 +554,12 @@ private:
     // use server_context methods instead
 
     common_params params_base;
+
+    int64_t last_bucket_mul_cpu_sample_us = 0;
+    bool bucket_mul_dynamic_logged = false;
+    uint64_t bucket_mul_prev_cpu_total = 0;
+    uint64_t bucket_mul_prev_cpu_idle = 0;
+    bool bucket_mul_prev_cpu_valid = false;
 
     // note: keep these alive - they determine the lifetime of the model, context, etc.
     common_init_result_ptr llama_init;
@@ -2605,6 +2614,34 @@ private:
         if (batch.n_tokens == 0) {
             SRV_WRN("%s", "no tokens to decode\n");
         }
+
+        // Dynamic bucket-mul effort from CPU usage % (when enabled and cpu_threshold < 999)
+        // cpu_threshold = average CPU usage % (0-100); reduce effort when cpu_pct >= threshold
+#if !defined(_WIN32)
+        if (params_base.use_bucket_mul && params_base.bucket_mul_cpu_threshold < 999.0f) {
+            const int64_t now_us = ggml_time_us();
+            if (now_us - last_bucket_mul_cpu_sample_us >= 1000000) {
+                if (!bucket_mul_dynamic_logged) {
+                    SRV_INF("bucket_mul dynamic effort active (cpu_usage%% threshold=%.0f), sampling every 1s\n",
+                        (double)params_base.bucket_mul_cpu_threshold);
+                    bucket_mul_dynamic_logged = true;
+                }
+                float cpu_pct = get_cpu_usage_pct(bucket_mul_prev_cpu_total, bucket_mul_prev_cpu_idle, bucket_mul_prev_cpu_valid);
+                if (cpu_pct >= 0.0f) {
+                    float effort = (cpu_pct >= params_base.bucket_mul_cpu_threshold)
+                        ? params_base.bucket_mul_effort_min
+                        : params_base.bucket_mul_effort;
+                    ggml_bucket_mul_set_effort(effort);
+                    SRV_INF("bucket_mul cpu_usage%%=%.1f effort=%.2f (%s)\n",
+                        (double)cpu_pct, effort,
+                        effort == params_base.bucket_mul_effort_min ? "min" : "nominal");
+                } else {
+                    SRV_WRN("%s", "bucket_mul: cpu usage unavailable\n");
+                }
+                last_bucket_mul_cpu_sample_us = now_us;
+            }
+        }
+#endif
 
         int32_t i_next = 0;
 

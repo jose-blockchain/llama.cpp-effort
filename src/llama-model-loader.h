@@ -93,6 +93,7 @@ struct llama_model_loader {
     size_t size_done = 0;
     size_t size_data = 0;
     std::vector<std::pair<size_t, size_t>> mmaps_used;
+    std::string path_model;
 
     llama_model_loader(
         const std::string & fname,
@@ -173,4 +174,6 @@ struct llama_model_loader {
     std::string ftype_name() const;
 
     void print_info() const;
+
+    const std::string & get_path() const { return path_model; }
 };
